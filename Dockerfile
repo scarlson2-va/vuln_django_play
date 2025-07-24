@@ -1,5 +1,5 @@
 # Create the "base" stage
-FROM python:3.7-buster as base
+FROM python:3.9-bookworm as base
 
 COPY requirements.txt start-server.sh /opt/app/
 COPY vuln_django/ /opt/app/vuln_django/vuln_django
