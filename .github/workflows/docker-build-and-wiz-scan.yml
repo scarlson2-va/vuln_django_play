@@ -4,15 +4,13 @@ on:
   pull_request:
     branches: [ main, master ]
 
-env:
-  WIZ_ENV: fedramp
-  WIZ_CLIENT_ID: ${{ secrets.WIZ_CLIENT_ID }}
-  WIZ_CLIENT_SECRET: ${{ secrets.WIZ_CLIENT_SECRET }}
-
 jobs:
   build-and-scan:
     runs-on: ubuntu-latest
-    
+    env:
+      WIZ_ENV: fedramp
+      WIZ_CLIENT_ID: ${{ secrets.WIZ_CLIENT_ID }}
+      WIZ_CLIENT_SECRET: ${{ secrets.WIZ_CLIENT_SECRET }}
     steps:
     - name: Checkout code
       uses: actions/checkout@v4
