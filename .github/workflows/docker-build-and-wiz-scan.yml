@@ -31,15 +31,11 @@ jobs:
         echo "Wiz CLI installed successfully"
         wizcli version
         
-    - name: Authenticate to Wiz
-      run: |
-        export WIZ_ENV=fedramp
-        wizcli auth --id ${{ secrets.WIZ_CLIENT_ID }} --secret ${{ secrets.WIZ_CLIENT_SECRET }}
-      shell: bash
-        
     - name: Scan Docker image with Wiz
       run: |
         echo "Starting Wiz scan of Docker image: vuln_django_app:${{ github.sha }}"
         echo "Using Wiz FedRamp environment (WIZ_ENV=fedramp)"
+        export WIZ_ENV=fedramp
+        wizcli auth --id ${{ secrets.WIZ_CLIENT_ID }} --secret ${{ secrets.WIZ_CLIENT_SECRET }}
         # Scan the built Docker image
         wizcli docker scan --image vuln_django_app:${{ github.sha }}
