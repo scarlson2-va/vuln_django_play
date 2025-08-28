@@ -17,14 +17,19 @@ jobs:
       
     - name: Build Docker image
       run: |
+        echo "Building Docker image with tag: vuln_django_app:${{ github.sha }}"
         docker build -t vuln_django_app:${{ github.sha }} .
+        echo "Docker image built successfully"
         
     - name: Download and install Wiz CLI
       run: |
+        echo "Downloading Wiz CLI..."
         # Download wizcli for Linux x64
         curl -o wizcli https://wizcli.app.wiz.io/latest/wizcli-linux-amd64
         chmod +x wizcli
         sudo mv wizcli /usr/local/bin/
+        echo "Wiz CLI installed successfully"
+        wizcli version
         
     - name: Scan Docker image with Wiz
       env:
@@ -32,5 +37,7 @@ jobs:
         WIZ_CLIENT_ID: ${{ secrets.WIZ_CLIENT_ID }}
         WIZ_CLIENT_SECRET: ${{ secrets.WIZ_CLIENT_SECRET }}
       run: |
+        echo "Starting Wiz scan of Docker image: vuln_django_app:${{ github.sha }}"
+        echo "Using Wiz FedRamp environment (WIZ_ENV=fedramp)"
         # Scan the built Docker image
         wizcli docker scan --image vuln_django_app:${{ github.sha }}
