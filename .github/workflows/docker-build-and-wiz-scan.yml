@@ -35,7 +35,7 @@ jobs:
       run: |
         export WIZ_ENV=fedramp
         wizcli auth --id ${{ secrets.WIZ_CLIENT_ID }} --secret ${{ secrets.WIZ_CLIENT_SECRET }}
-        shell: bash
+      shell: bash
         
     - name: Scan Docker image with Wiz
       run: |
