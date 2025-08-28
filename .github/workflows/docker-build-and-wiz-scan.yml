@@ -25,6 +25,10 @@ jobs:
         echo "Docker image built successfully"
         
     - name: Download and install Wiz CLI
+      env:
+        WIZ_ENV: fedramp
+        WIZ_CLIENT_ID: ${{ secrets.WIZ_CLIENT_ID }}
+        WIZ_CLIENT_SECRET: ${{ secrets.WIZ_CLIENT_SECRET }}
       run: |
         echo "Downloading Wiz CLI..."
         # Download wizcli for Linux x64
@@ -35,6 +39,10 @@ jobs:
         wizcli version
         
     - name: Scan Docker image with Wiz
+      env:
+        WIZ_ENV: fedramp
+        WIZ_CLIENT_ID: ${{ secrets.WIZ_CLIENT_ID }}
+        WIZ_CLIENT_SECRET: ${{ secrets.WIZ_CLIENT_SECRET }}
       run: |
         echo "Starting Wiz scan of Docker image: vuln_django_app:${{ github.sha }}"
         echo "Using Wiz FedRamp environment (WIZ_ENV=fedramp)"
