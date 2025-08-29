@@ -23,6 +23,9 @@ jobs:
         
     - name: Download and install Wiz CLI
       run: |
+        echo "Installing jq for JSON parsing..."
+        sudo apt-get update && sudo apt-get install -y jq
+        
         echo "Downloading Wiz CLI..."
         # Download wizcli for Linux x64
         curl -o wizcli https://wizcli.app.wiz.io/latest/wizcli-linux-amd64
@@ -37,5 +40,63 @@ jobs:
         echo "Using Wiz FedRamp environment (WIZ_ENV=fedramp)"
         export WIZ_ENV=fedramp
         wizcli auth --id ${{ secrets.WIZ_CLIENT_ID }} --secret ${{ secrets.WIZ_CLIENT_SECRET }}
-        # Scan the built Docker image
-        wizcli docker scan --image vuln_django_app:${{ github.sha }}
+        
+        # Scan the built Docker image with policy checking
+        echo "Running Wiz scan with policy validation..."
+        
+        # First run a regular scan to capture full output
+        echo "Running full Wiz scan..."
+        wizcli docker scan --image vuln_django_app:${{ github.sha }} --format json > full_scan_results.json
+        FULL_SCAN_EXIT_CODE=$?
+        
+        # Then run with policy-hits-only flag to check specifically for policy violations
+        echo "Checking for policy violations..."
+        wizcli docker scan --image vuln_django_app:${{ github.sha }} --policy-hits-only --format json > policy_scan_results.json
+        POLICY_SCAN_EXIT_CODE=$?
+        
+        echo "Full scan exit code: $FULL_SCAN_EXIT_CODE"
+        echo "Policy scan exit code: $POLICY_SCAN_EXIT_CODE"
+        
+        # Display the full scan results
+        echo "=== Full Scan Results ==="
+        if [ -f full_scan_results.json ]; then
+          cat full_scan_results.json
+        fi
+        
+        # Check if the main scan failed
+        if [ $FULL_SCAN_EXIT_CODE -ne 0 ]; then
+          echo "❌ Wiz scan failed with exit code $FULL_SCAN_EXIT_CODE"
+          exit 1
+        fi
+        
+        # Check if there are policy violations
+        echo "=== Policy Violation Check ==="
+        if [ -f policy_scan_results.json ]; then
+          POLICY_RESULTS=$(cat policy_scan_results.json)
+          echo "Policy scan results:"
+          echo "$POLICY_RESULTS"
+          
+          # Check if policy scan returned non-zero exit code OR has policy hits
+          if [ $POLICY_SCAN_EXIT_CODE -ne 0 ]; then
+            echo "❌ Policy scan failed with exit code $POLICY_SCAN_EXIT_CODE"
+            exit 1
+          fi
+          
+          # Check if policy results contain actual violations
+          # If the JSON contains any findings when using --policy-hits-only, that means there are violations
+          if [ -s policy_scan_results.json ] && echo "$POLICY_RESULTS" | jq -e '. | length > 0' > /dev/null 2>&1; then
+            echo "❌ Policy violations detected in scan results!"
+            echo "The following policy violations were found:"
+            echo "$POLICY_RESULTS" | jq '.' 2>/dev/null || echo "$POLICY_RESULTS"
+            exit 1
+          fi
+        else
+          echo "❌ Policy scan results file not found"
+          exit 1
+        fi
+        
+        # Clean up temporary files
+        rm -f full_scan_results.json policy_scan_results.json
+        
+        # If we get here, scan completed successfully with no policy violations
+        echo "✅ Wiz scan completed successfully with no policy violations detected"
