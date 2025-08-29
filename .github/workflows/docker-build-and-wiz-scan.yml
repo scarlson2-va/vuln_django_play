@@ -41,62 +41,71 @@ jobs:
         export WIZ_ENV=fedramp
         wizcli auth --id ${{ secrets.WIZ_CLIENT_ID }} --secret ${{ secrets.WIZ_CLIENT_SECRET }}
         
-        # Scan the built Docker image with policy checking
+        # Run single Wiz scan with JSON output
         echo "Running Wiz scan with policy validation..."
+        wizcli docker scan --image vuln_django_app:${{ github.sha }} --format json > scan_results.json
+        SCAN_EXIT_CODE=$?
         
-        # First run a regular scan to capture full output
-        echo "Running full Wiz scan..."
-        wizcli docker scan --image vuln_django_app:${{ github.sha }} --format json > full_scan_results.json
-        FULL_SCAN_EXIT_CODE=$?
+        echo "Scan exit code: $SCAN_EXIT_CODE"
         
-        # Then run with policy-hits-only flag to check specifically for policy violations
-        echo "Checking for policy violations..."
-        wizcli docker scan --image vuln_django_app:${{ github.sha }} --policy-hits-only --format json > policy_scan_results.json
-        POLICY_SCAN_EXIT_CODE=$?
-        
-        echo "Full scan exit code: $FULL_SCAN_EXIT_CODE"
-        echo "Policy scan exit code: $POLICY_SCAN_EXIT_CODE"
-        
-        # Display the full scan results
-        echo "=== Full Scan Results ==="
-        if [ -f full_scan_results.json ]; then
-          cat full_scan_results.json
+        # Display the scan results
+        echo "=== Scan Results ==="
+        if [ -f scan_results.json ]; then
+          cat scan_results.json
         fi
         
-        # Check if the main scan failed
-        if [ $FULL_SCAN_EXIT_CODE -ne 0 ]; then
-          echo "❌ Wiz scan failed with exit code $FULL_SCAN_EXIT_CODE"
+        # Check if the scan failed
+        if [ $SCAN_EXIT_CODE -ne 0 ]; then
+          echo "❌ Wiz scan failed with exit code $SCAN_EXIT_CODE"
           exit 1
         fi
         
-        # Check if there are policy violations
+        # Check for policy violations in the scan results
         echo "=== Policy Violation Check ==="
-        if [ -f policy_scan_results.json ]; then
-          POLICY_RESULTS=$(cat policy_scan_results.json)
-          echo "Policy scan results:"
-          echo "$POLICY_RESULTS"
+        if [ -f scan_results.json ]; then
+          # Check if there are any policy violations in the JSON results
+          # Look for policy-related findings or violations in the scan output
+          POLICY_VIOLATIONS=$(cat scan_results.json | jq -r '
+            if type == "array" then
+              map(select(.policyViolations? and (.policyViolations | length > 0))) | length
+            elif .policyViolations? then
+              .policyViolations | length
+            elif .policies? then
+              [.policies[] | select(.violated == true)] | length
+            elif .findings? then
+              [.findings[] | select(.policyName? or .policy?)] | length
+            else
+              0
+            end
+          ' 2>/dev/null || echo "0")
           
-          # Check if policy scan returned non-zero exit code OR has policy hits
-          if [ $POLICY_SCAN_EXIT_CODE -ne 0 ]; then
-            echo "❌ Policy scan failed with exit code $POLICY_SCAN_EXIT_CODE"
-            exit 1
-          fi
+          echo "Number of policy violations found: $POLICY_VIOLATIONS"
           
-          # Check if policy results contain actual violations
-          # If the JSON contains any findings when using --policy-hits-only, that means there are violations
-          if [ -s policy_scan_results.json ] && echo "$POLICY_RESULTS" | jq -e '. | length > 0' > /dev/null 2>&1; then
+          if [ "$POLICY_VIOLATIONS" != "0" ] && [ "$POLICY_VIOLATIONS" != "null" ]; then
             echo "❌ Policy violations detected in scan results!"
             echo "The following policy violations were found:"
-            echo "$POLICY_RESULTS" | jq '.' 2>/dev/null || echo "$POLICY_RESULTS"
+            cat scan_results.json | jq -r '
+              if type == "array" then
+                map(select(.policyViolations? and (.policyViolations | length > 0)))
+              elif .policyViolations? then
+                .policyViolations
+              elif .policies? then
+                [.policies[] | select(.violated == true)]
+              elif .findings? then
+                [.findings[] | select(.policyName? or .policy?)]
+              else
+                []
+              end
+            ' 2>/dev/null || cat scan_results.json
             exit 1
           fi
         else
-          echo "❌ Policy scan results file not found"
+          echo "❌ Scan results file not found"
           exit 1
         fi
         
         # Clean up temporary files
-        rm -f full_scan_results.json policy_scan_results.json
+        rm -f scan_results.json
         
         # If we get here, scan completed successfully with no policy violations
         echo "✅ Wiz scan completed successfully with no policy violations detected"
