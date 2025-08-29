@@ -23,6 +23,9 @@ jobs:
         
     - name: Download and install Wiz CLI
       run: |
+        echo "Installing jq for JSON parsing..."
+        sudo apt-get update && sudo apt-get install -y jq
+        
         echo "Downloading Wiz CLI..."
         # Download wizcli for Linux x64
         curl -o wizcli https://wizcli.app.wiz.io/latest/wizcli-linux-amd64
@@ -37,5 +40,72 @@ jobs:
         echo "Using Wiz FedRamp environment (WIZ_ENV=fedramp)"
         export WIZ_ENV=fedramp
         wizcli auth --id ${{ secrets.WIZ_CLIENT_ID }} --secret ${{ secrets.WIZ_CLIENT_SECRET }}
-        # Scan the built Docker image
-        wizcli docker scan --image vuln_django_app:${{ github.sha }}
+        
+        # Run single Wiz scan with JSON output
+        echo "Running Wiz scan with policy validation..."
+        wizcli docker scan --image vuln_django_app:${{ github.sha }} --format json > scan_results.json
+        SCAN_EXIT_CODE=$?
+        
+        echo "Scan exit code: $SCAN_EXIT_CODE"
+        
+        # Display the scan results
+        echo "=== Scan Results ==="
+        if [ -f scan_results.json ]; then
+          cat scan_results.json
+        fi
+        
+        # Check if the scan failed
+        if [ $SCAN_EXIT_CODE -ne 0 ]; then
+          echo "❌ Wiz scan failed with exit code $SCAN_EXIT_CODE"
+          exit 1
+        fi
+        
+        # Check for policy violations in the scan results
+        echo "=== Policy Violation Check ==="
+        if [ -f scan_results.json ]; then
+          # Check if there are any policy violations in the JSON results
+          # Look for policy-related findings or violations in the scan output
+          POLICY_VIOLATIONS=$(cat scan_results.json | jq -r '
+            if type == "array" then
+              map(select(.policyViolations? and (.policyViolations | length > 0))) | length
+            elif .policyViolations? then
+              .policyViolations | length
+            elif .policies? then
+              [.policies[] | select(.violated == true)] | length
+            elif .findings? then
+              [.findings[] | select(.policyName? or .policy?)] | length
+            else
+              0
+            end
+          ' 2>/dev/null || echo "0")
+          
+          echo "Number of policy violations found: $POLICY_VIOLATIONS"
+          
+          if [ "$POLICY_VIOLATIONS" != "0" ] && [ "$POLICY_VIOLATIONS" != "null" ]; then
+            echo "❌ Policy violations detected in scan results!"
+            echo "The following policy violations were found:"
+            cat scan_results.json | jq -r '
+              if type == "array" then
+                map(select(.policyViolations? and (.policyViolations | length > 0)))
+              elif .policyViolations? then
+                .policyViolations
+              elif .policies? then
+                [.policies[] | select(.violated == true)]
+              elif .findings? then
+                [.findings[] | select(.policyName? or .policy?)]
+              else
+                []
+              end
+            ' 2>/dev/null || cat scan_results.json
+            exit 1
+          fi
+        else
+          echo "❌ Scan results file not found"
+          exit 1
+        fi
+        
+        # Clean up temporary files
+        rm -f scan_results.json
+        
+        # If we get here, scan completed successfully with no policy violations
+        echo "✅ Wiz scan completed successfully with no policy violations detected"
